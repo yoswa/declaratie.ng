@@ -1,0 +1,61 @@
+# Zet de map site/ op Hestia (declaratie.ng) bij elke push naar main.
+# Nodig in GitHub (Settings > Secrets and variables > Actions):
+# DEPLOY_KEY, DEPLOY_KNOWN_HOSTS, DEPLOY_HOST, DEPLOY_PORT en DEPLOY_USER.
+name: Site naar Hestia
+
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', '.github/workflows/deploy.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Versie in de links zetten
+        # De server laat browsers CSS en afbeeldingen jaren bewaren. Met ?v=<commit> in de links
+        # haalt elke browser na een nieuwe deploy meteen de nieuwe versie op.
+        run: sed -i "s/__VERSION__/${GITHUB_SHA::7}/g" site/*.html
+
+      - name: SSH klaarzetten
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy ~/.ssh/known_hosts
+
+      - name: lftp installeren
+        run: sudo apt-get install -y -qq lftp > /dev/null
+
+      - name: Bestanden overzetten
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          # De Hestia-gebruiker zit in een SFTP-jail (alleen SFTP, alleen de eigen homemap),
+          # dus geen rsync maar een SFTP-mirror. Het pad is het pad binnen die jail.
+          lftp -c "
+            set sftp:connect-program 'ssh -a -x -i $HOME/.ssh/deploy -p $DEPLOY_PORT -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes';
+            set net:max-retries 2;
+            set net:timeout 30;
+            open -u $DEPLOY_USER, sftp://$DEPLOY_HOST;
+            mirror --reverse --delete --verbose --no-perms site/ /home/$DEPLOY_USER/web/declaratie.ng/public_html/
+          "
+
+      - name: Opruimen
+        if: always()
+        run: rm -f ~/.ssh/deploy
