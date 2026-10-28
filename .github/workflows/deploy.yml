@@ -1,7 +1,7 @@
-# Zet de map site/ op Hestia (declaratie.ng) bij elke push naar main.
+# Publiceert de map site/ op de webserver bij elke push naar main.
 # Nodig in GitHub (Settings > Secrets and variables > Actions):
 # DEPLOY_KEY, DEPLOY_KNOWN_HOSTS, DEPLOY_HOST, DEPLOY_PORT en DEPLOY_USER.
-name: Site naar Hestia
+name: Deploy
 
 on:
   push:
@@ -46,8 +46,8 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          # De Hestia-gebruiker zit in een SFTP-jail (alleen SFTP, alleen de eigen homemap),
-          # dus geen rsync maar een SFTP-mirror. Het pad is het pad binnen die jail.
+          # De deploy-gebruiker heeft alleen SFTP-toegang tot de eigen homemap,
+          # daarom een SFTP-mirror in plaats van rsync.
           lftp -c "
             set sftp:connect-program 'ssh -a -x -i $HOME/.ssh/deploy -p $DEPLOY_PORT -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes';
             set net:max-retries 2;
